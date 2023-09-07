@@ -20,11 +20,9 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
 	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/GoogleCloudPlatform/guest-agent/google_guest_agent/events"
@@ -32,6 +30,7 @@ import (
 	"github.com/GoogleCloudPlatform/guest-agent/google_guest_agent/events/sshtrustedca"
 	"github.com/GoogleCloudPlatform/guest-agent/google_guest_agent/osinfo"
 	"github.com/GoogleCloudPlatform/guest-agent/google_guest_agent/scheduler"
+	"github.com/GoogleCloudPlatform/guest-agent/google_guest_agent/service"
 	"github.com/GoogleCloudPlatform/guest-agent/google_guest_agent/sshca"
 	"github.com/GoogleCloudPlatform/guest-agent/google_guest_agent/telemetry"
 	"github.com/GoogleCloudPlatform/guest-agent/metadata"
@@ -129,7 +128,7 @@ func runUpdate(ctx context.Context) {
 	wg.Wait()
 }
 
-func runAgent(ctx context.Context) error {
+func runAgent(ctx context.Context, svc *service.Manager) error {
 	opts := logger.LogOpts{LoggerName: programName}
 	if runtime.GOOS == "windows" {
 		opts.FormatFunction = logFormatWindows
@@ -167,6 +166,10 @@ func runAgent(ctx context.Context) error {
 	mdsClient = metadata.New()
 
 	agentInit(ctx)
+
+	if err := svc.SetState(ctx, service.StateRunning); err != nil {
+		return fmt.Errorf("failed to set service state to running: %+v", err)
+	}
 
 	// Previous request to metadata *may* not have worked becasue routes don't get added until agentInit.
 	if newMetadata == nil {
@@ -264,16 +267,23 @@ func closer(c io.Closer) {
 
 func main() {
 	ctx, cancelContext := context.WithCancel(context.Background())
-	sigBus := make(chan os.Signal, 1)
 
-	signal.Notify(sigBus, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGHUP)
+	svc := service.New()
 	go func() {
-		signal := <-sigBus
-		logger.Infof("GCE Guest Agent got signal: %d, leaving...", signal)
+		<-svc.Done()
+
+		if err := svc.SetState(ctx, service.StateStopped); err != nil {
+			logger.Fatalf("Failed to set service state to StopPending: %+v", err)
+		}
+
 		cancelContext()
 	}()
 
-	if err := runAgent(ctx); err != nil {
+	if err := svc.Register(ctx); err != nil {
+		logger.Fatalf("Could not register into system's service manager: %+v", err)
+	}
+
+	if err := runAgent(ctx, svc); err != nil {
 		logger.Fatalf("Failed to run agent: %+v", err)
 	}
 }

@@ -102,9 +102,6 @@ func agentInit(ctx context.Context) {
 		}
 	} else {
 		// Linux instance setup.
-		defer run.Quiet(ctx, "systemd-notify", "--ready")
-		defer logger.Debugf("notify systemd")
-
 		if config.Section("Snapshots").Key("enabled").MustBool(false) {
 			logger.Infof("Snapshot listener enabled")
 			snapshotServiceIP := config.Section("Snapshots").Key("snapshot_service_ip").MustString("169.254.169.254")
