@@ -1,5 +1,12 @@
-# ignore all built binaries
-**/gce_workload_cert_refresh
+# ignore all produced binaries
 **/google_authorized_keys
+**/google_authorized_keys.exe
 **/google_guest_agent
+**/google_guest_agent.exe
 **/google_metadata_script_runner
+**/google_metadata_script_runner.exe
+**/google_workload_cert_refresh
+**/google_workload_cert_refresh.exe
+
+# ignore build dir
+out/

@@ -2,8 +2,6 @@ module github.com/GoogleCloudPlatform/guest-agent
 
 go 1.20
 
-replace github.com/GoogleCloudPlatform/guest-agent/metadata => ../metadata
-
 require (
 	cloud.google.com/go/storage v1.31.0
 	github.com/GoogleCloudPlatform/guest-logging-go v0.0.0-20230710215706-450679fd88a9

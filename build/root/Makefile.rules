@@ -1,0 +1,246 @@
+#  Copyright 2023 Google Inc. All Rights Reserved.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+
+cmd-dir := $(top_srcdir)cmd/
+
+all-binaries        := authorized-keys guest-agent metadata-script-runner workload-cert-refresh
+all-libs            := internal
+all-units           := google-guest-agent.service google-startup-scripts.service \
+			google-shutdown-scripts.service \
+			gce-workload-cert-refresh.service gce-workload-cert-refresh.timer
+all-presets         := 90-google-guest-agent.preset
+all-inits           := google-guest-agent.conf google-startup-scripts.conf \
+			google-shutdown-scripts.conf
+all-default-configs := instance_configs.cfg
+
+build-targets   :=
+clean-targets   :=
+test-targets    :=
+install-targets :=
+
+define make-build
+build-targets += build-$(1)
+build-$(1):
+	$(Q)echo "     "BUILD"   "$($(1)-display)
+	$(Q)$(GO_BUILD_CMD) -C $($(1)-dir)/ $($(1)-package) \
+		-o $(notdir $($(1)-artifact-path)) -buildvcs=false
+endef
+
+define make-build-lib
+build-targets += build-$(1)
+build-$(1):
+	$(Q)echo "     "BUILD"   "$($(1)-display)
+	$(Q)$(GO_BUILD_CMD) $($(1)-dir) ./...
+endef
+
+define make-clean
+clean-targets += clean-$(1)
+clean-$(1):
+	$(Q)echo "     "CLEAN"   "$($(1)-display)
+	$(Q)$(GO_CLEAN_CMD) $($(1)-dir) $($(1)-package)
+endef
+
+define make-test
+test-targets += test-$(1)
+test-$(1):
+	$(Q)echo "     "TEST"   "$($(1)-display)
+	$(Q)$(GO_TEST_CMD) $($(1)-dir) $($(1)-package)
+endef
+
+define make-install
+install-targets += install-$(1)
+install-$(1): build-$(1)
+	$(Q)echo "      "INST"   "$($(1)-display)
+	$(Q)install -d $(2)
+	$(Q)install -p -m $(3) $($(1)-artifact-path) $(2)
+endef
+
+define make-install-non-buildable
+install-targets += install-$(1)
+install-$(1):
+	$(Q)echo "      "INST"   "$($(1)-display)
+	$(Q)install -d $(2)
+	$(Q)install -p -m $(3) $($(1)-artifact-path) $(2)
+endef
+
+parse-bins = \
+	$(eval $(1)-display := $(1)) \
+	$(eval $(1)-artifact-path := $(addprefix $(cmd-dir),$(1)/google_$(subst -,_,$(1)))) \
+	$(eval $(1)-dir := $(addprefix $(cmd-dir),$(1))) \
+
+parse-libs = \
+	$(eval $(1)-display := $(addprefix $(top_srcdir),$(subst -,_,$(1)))) \
+	$(eval $(1)-dir := $(addprefix $(top_srcdir),$(subst -,_,$(1)))/...) \
+
+src-systemd-units-dir := $(top_srcdir)configs/usr/lib/systemd/system/
+
+parse-units = \
+	$(eval $(1)-display := $(1)) \
+	$(eval $(1)-artifact-path := $(addprefix $(src-systemd-units-dir),$(1))) \
+
+make-unit-targets = \
+	$(foreach unit,$(all-units), \
+		$(eval $(call parse-units,$(unit))) \
+		$(eval $(call make-install-non-buildable,$(unit),$(UNITDIR),0644)) \
+	) \
+
+src-systemd-presets-dir := $(top_srcdir)configs/usr/lib/systemd/system-preset/
+
+parse-presets = \
+	$(eval $(1)-display := $(1)) \
+	$(eval $(1)-artifact-path := $(addprefix $(src-systemd-presets-dir),$(1))) \
+
+make-preset-targets = \
+	$(foreach unit,$(all-presets), \
+		$(eval $(call parse-presets,$(unit))) \
+		$(eval $(call make-install-non-buildable,$(unit),$(PRESETDIR),0644)) \
+	) \
+
+src-init-dir := $(top_srcdir)configs/etc/init/
+
+parse-inits = \
+	$(eval $(1)-display := $(1)) \
+	$(eval $(1)-artifact-path := $(addprefix $(src-init-dir),$(1))) \
+
+make-init-targets = \
+	$(foreach init,$(all-inits), \
+		$(eval $(call parse-inits,$(init))) \
+		$(eval $(call make-install-non-buildable,$(init),$(INITDIR),0644)) \
+	) \
+
+src-default-dir := $(top_srcdir)configs/etc/default/
+
+parse-defaults = \
+	$(eval $(1)-display := $(1)) \
+	$(eval $(1)-artifact-path := $(addprefix $(src-default-dir),$(1))) \
+
+make-default-targets = \
+	$(foreach default,$(all-defaults), \
+		$(eval $(call parse-defaults,$(init))) \
+		$(eval $(call make-install-non-buildable,$(init),$(INITDIR),0644)) \
+	) \
+
+make-binary-targets = \
+	$(foreach bin,$(all-binaries), \
+		$(eval $(call parse-bins,$(bin))) \
+		$(eval $(call make-build,$(bin))) \
+		$(eval $(call make-clean,$(bin))) \
+		$(eval $(call make-test,$(bin))) \
+		$(eval $(call make-install,$(bin),$(BINDIR),755)) \
+	) \
+
+make-lib-targets = \
+	$(foreach lib,$(all-libs), \
+		$(eval $(call parse-libs,$(lib))) \
+		$(eval $(call make-build-lib,$(lib))) \
+		$(eval $(call make-clean,$(lib))) \
+		$(eval $(call make-test,$(lib))) \
+	) \
+
+$(call make-binary-targets)
+$(call make-unit-targets)
+$(call make-preset-targets)
+$(call make-init-targets)
+$(call make-default-targets)
+
+ifeq ($(SKIP_LIB_TARGETS),"false")
+$(call make-lib-targets)
+endif
+
+build-all: $(build-targets)
+clean-all: $(clean-targets)
+	$(Q)$(GO_CLEAN_CMD) -testcache
+test-all: $(test-targets)
+
+install: $(install-targets)
+
+FORCE: ;
+
+build: FORCE
+	$(Q)echo "     Building all artifacts..."
+	$(Q)$(GO_BUILD_CMD) ./... ./... -buildvcs=false
+
+clean: FORCE
+	$(Q)echo "     Cleaning all artifacts..."
+	$(Q)rm -rf $(dir $(PREFIX))
+	$(Q)$(GO_CLEAN_CMD) -testcache
+	$(Q)$(GO_CLEAN_CMD) ./... ./...
+
+test: FORCE
+	$(Q)echo "     Running all tests..."
+	$(Q)$(GO_TEST_CMD) ./... ./...
+
+all: help
+
+$(eval $(call make-error-target,package,"Target not yet implemented: package"))
+$(eval $(call make-error-target,package-deb,"Target not yet implemented: package-deb"))
+$(eval $(call make-error-target,package-rpm,"Target not yet implemented: package-rpm"))
+
+help:
+	$(Q)echo "Available targets:"
+	$(Q)echo ""
+	$(Q)echo "Build targets:"
+	$(Q)echo "  build                           -   build all artifacts"
+	$(Q)echo "  build-all                       -   run all build targets"
+	$(Q)echo "  build-authorized-keys           -   build authorized-keys binary"
+	$(Q)echo "  build-guest-agent               -   build guest-agent binary"
+	$(Q)echo "  build-internal                  -   build internal library"
+	$(Q)echo "  build-metadata-script-runner    -   build metadata-script-runner binary"
+	$(Q)echo "  build-workload-cert-refresh     -   build workload-cert-refresh binary"
+	$(Q)echo ""
+	$(Q)echo "Test targets:"
+	$(Q)echo "  test                            -   run all tests"
+	$(Q)echo "  test-all                        -   run all test targets"
+	$(Q)echo "  test-authorized-keys            -   run authorized-keys tests"
+	$(Q)echo "  test-guest-agent                -   run guest-agent tests"
+	$(Q)echo "  test-internal                   -   run internal library tests"
+	$(Q)echo "  test-metadata-script-runner     -   run metadata-script-runner tests"
+	$(Q)echo "  test-workload-cert-refresh      -   run workload-cert-refresh tests"
+	$(Q)echo ""
+	$(Q)echo "Clean targets:"
+	$(Q)echo "  clean                           -   clean all artifacts"
+	$(Q)echo "  clean-all                       -   run all clean targets"
+	$(Q)echo "  clean-authorized-keys           -   clean authorized-keys binary"
+	$(Q)echo "  clean-guest-agent               -   clean guest-agent binary"
+	$(Q)echo "  clean-internal                  -   clean internal library"
+	$(Q)echo "  clean-metadata-script-runner    -   clean metadata-script-runner binary"
+	$(Q)echo "  clean-workload-cert-refresh     -   clean workload-cert-refresh binary"
+	$(Q)echo ""
+	$(Q)echo "Packaging targets:"
+	$(Q)echo "  package                         -   build all packages"
+	$(Q)echo "  package-deb                     -   build deb package"
+	$(Q)echo "  package-rpm                     -   build rpm package"
+	$(Q)echo ""
+	$(Q)echo "Install targets:"
+	$(Q)echo "  install                         -   install all artifacts"
+	$(Q)echo "  install-authorized-keys         -   install authorized-keys binary"
+	$(Q)echo "  install-binaries                -   install all binaries only"
+	$(Q)echo "  install-guest-agent             -   install guest-agent binary"
+	$(Q)echo "  install-metadata-script-runner  -   install metadata-script-runner binary"
+	$(Q)echo "  install-workload-cert-refresh   -   install workload-cert-refresh binary"
+	$(Q)echo ""
+	$(Q)echo "Miscellaneous targets:"
+	$(Q)echo "  help                            -   show this help message"
+	$(Q)echo ""
+	$(Q)echo "Install Variables:"
+	$(Q)echo "  PREFIX              -   the install target root dir, default: "$(top_srcdir)out/
+	$(Q)echo "  USRDIR              -   the install target usr/ dir, default: "$(top_srcdir)out/usr/
+	$(Q)echo "  BINDIR              -   the install target bin/ dir, default: "$(top_srcdir)out/usr/bin/
+	$(Q)echo "  ETCDIR              -   the install target etc/ dir, default: "$(top_srcdir)out/etc/
+	$(Q)echo "  UNITDIR             -   the install target systemd's system dir, default: "$(top_srcdir)out/usr/lib/systemd/system
+	$(Q)echo "  PRESETDIR           -   the install target systemd's preset dir, default: "$(top_srcdir)out/usr/lib/systemd/system-preset
+	$(Q)echo ""
+	$(Q)echo "Build Variables:"
+	$(Q)echo "  SKIP_LIB_TARGETS    -   Don't execute lib targets (build & test) - even if they are explicitly called."
+	$(Q)echo "  VERBOSE             -   print commands being executed if set (any value), undefined by default."

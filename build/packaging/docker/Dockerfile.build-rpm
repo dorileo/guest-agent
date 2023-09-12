@@ -1,0 +1,15 @@
+ARG base_image=centos
+ARG image_version=7
+
+FROM $base_image:$image_version
+
+RUN yum -y update
+RUN yum -y groupinstall 'Development Tools'
+RUN yum -y install git
+RUN curl -L https://go.dev/dl/go1.21.1.linux-amd64.tar.gz -o go1.21.1.linux-amd64.tar.gz
+RUN tar -xvf go1.21.1.linux-amd64.tar.gz -C /opt
+RUN mkdir -p /opt/package-build
+ADD build/packaging/rpm/build-rpm.sh /opt/package-build/build-rpm.sh
+
+ENV PATH="${PATH}:/opt/go/bin"
+ENTRYPOINT ["/opt/package-build/build-rpm.sh"]
