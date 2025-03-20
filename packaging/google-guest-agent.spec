@@ -153,6 +153,10 @@ install -p -m 0644 90-%{name}.preset %{buildroot}%{_presetdir}/90-%{name}.preset
 
 %if ! 0%{?el6}
 %post
+
+systemctl enable google-guest-compat-manager.service
+systemctl enable google-guest-agent-manager.service
+
 if [ $1 -eq 1 ]; then
   # Initial installation
 
@@ -168,10 +172,8 @@ if [ $1 -eq 1 ]; then
   systemctl enable google-shutdown-scripts.service >/dev/null 2>&1 || :
   systemctl enable gce-workload-cert-refresh.timer >/dev/null 2>&1 || :
 
-  %if 0%{?build_plugin_manager}
-    systemctl enable google-guest-compat-manager.service >/dev/null 2>&1 || :
-    systemctl enable google-guest-agent-manager.service >/dev/null 2>&1 || :
-  %endif
+  systemctl enable google-guest-compat-manager.service
+  systemctl enable google-guest-agent-manager.service
 
   if [ -d /run/systemd/system ]; then
     systemctl daemon-reload >/dev/null 2>&1 || :
